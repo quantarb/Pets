@@ -15,6 +15,9 @@ import android.util.Log;
 
 import com.example.android.pets.data.PetContract.PetEntry;
 
+import static com.example.android.pets.data.PetContract.PetEntry.CONTENT_AUTHORITY;
+import static com.example.android.pets.data.PetContract.PetEntry.PATH_PETS;
+
 /**
  * {@link ContentProvider} for Pets app.
  */
@@ -27,10 +30,9 @@ public class PetProvider extends ContentProvider {
     private PetDbHelper mDbHelper;
 
     static {
-        sUriMatcher.addURI(PetEntry.CONTENT_AUTHORITY, PetEntry.PATH_PETS, PETS);
-        sUriMatcher.addURI(PetEntry.CONTENT_AUTHORITY, PetEntry.PATH_PETS + "/#", PET_ID);
+        sUriMatcher.addURI(CONTENT_AUTHORITY, PATH_PETS, PETS);
+        sUriMatcher.addURI(CONTENT_AUTHORITY, PATH_PETS + "/#", PET_ID);
     }
-
 
     @Override
     public boolean onCreate() {
@@ -59,6 +61,9 @@ public class PetProvider extends ContentProvider {
             default:
                 throw new IllegalArgumentException("Cannot query unknown URI " + uri);
         }
+
+        cursor.setNotificationUri(getContext().getContentResolver(), uri);
+
         return cursor;
     }
 
@@ -99,6 +104,8 @@ public class PetProvider extends ContentProvider {
             Log.e(LOG_TAG, "Failed to insert row for " + uri);
             return null;
         }
+
+        getContext().getContentResolver().notifyChange(uri, null);
 
         return ContentUris.withAppendedId(uri, id);
     }
@@ -150,31 +157,52 @@ public class PetProvider extends ContentProvider {
         }
 
         SQLiteDatabase database = mDbHelper.getWritableDatabase();
-        return database.update(PetEntry.TABLE_NAME, values, selection, selectionArgs);
+        int rowsUpdated = database.update(PetEntry.TABLE_NAME, values, selection, selectionArgs);
+        if (rowsUpdated != 0) {
+            getContext().getContentResolver().notifyChange(uri, null);
+        }
+
+        return rowsUpdated;
     }
 
     @Override
     public int delete(Uri uri, String selection, String[] selectionArgs) {
         SQLiteDatabase database = mDbHelper.getWritableDatabase();
-
+        int rowsDeleted;
         final int match = sUriMatcher.match(uri);
         switch (match) {
             case PETS:
-                // Delete all rows that match the selection and selection args
-                return database.delete(PetEntry.TABLE_NAME, selection, selectionArgs);
+                rowsDeleted = database.delete(PetEntry.TABLE_NAME, selection, selectionArgs);
+                break;
             case PET_ID:
                 // Delete a single row given by the ID in the URI
                 selection = PetEntry._ID + "=?";
-                selectionArgs = new String[] { String.valueOf(ContentUris.parseId(uri)) };
-                return database.delete(PetEntry.TABLE_NAME, selection, selectionArgs);
+                selectionArgs = new String[]{String.valueOf(ContentUris.parseId(uri))};
+                rowsDeleted = database.delete(PetEntry.TABLE_NAME, selection, selectionArgs);
+                break;
             default:
                 throw new IllegalArgumentException("Deletion is not supported for " + uri);
+
         }
+
+        if (rowsDeleted != 0) {
+            getContext().getContentResolver().notifyChange(uri, null);
+        }
+
+        return rowsDeleted;
     }
 
 
     @Override
     public String getType(Uri uri) {
-        return null;
+        final int match = sUriMatcher.match(uri);
+        switch (match) {
+            case PETS:
+                return PetEntry.CONTENT_LIST_TYPE;
+            case PET_ID:
+                return PetEntry.CONTENT_ITEM_TYPE;
+            default:
+                throw new IllegalStateException("Unknown URI " + uri + " with match " + match);
+        }
     }
 }
